@@ -1,0 +1,666 @@
+﻿<html>
+	<head>
+		<title>CM20219 – Coursework 2 – WebGL</title>
+        <meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+		<style>
+			body { margin: 0; overflow: hidden; }
+			canvas { width: 100%; height: 100%; }
+		</style>
+	</head>
+	<body>
+		<script src="three.js"></script>
+		<script src="OBJloader.js"></script>
+		<script type = "module">
+            "use strict"; // https://stackoverflow.com/q/1335851/72470
+
+			//import {MTLLoader} from 'https://threejsfundamentals.org/threejs/resources/threejs/r122/examples/jsm/loaders/MTLLoader.js';
+			import {MTLLoader} from 'http://localhost:8000/Documents/Uni/Year%202/CM20219%20-%20Fundamentals%20of%20Visual%20Computing/cw2/CM20219-WebGL-Coursework-2020-21-2/MTLLoader.js';
+
+			// Global variables that are available in all functions.
+            var camera, scene, renderer, cube, bunny, centre, footballer, footballField, football, trophy, keeper, gridHelper, homeGoal, awayGoal, trophyStand, ambientLighting, hemisphereLighting;
+			const quaternion = new THREE.Quaternion();
+			let axes;
+			var url = 'http://localhost:8000/Documents/Uni/Year%202/CM20219%20-%20Fundamentals%20of%20Visual%20Computing/cw2/CM20219-WebGL-Coursework-2020-21-2/';
+
+            // Initialise the scene, and draw it for the first time.
+            init();
+			animate();
+
+            // Listen for keyboard events, to react to them.
+            document.addEventListener('keydown', handleKeyDown);
+
+            // Scene initialisation. This function is only run once, at the very beginning.
+            function init()
+            {
+                scene = new THREE.Scene();
+
+                // Set up the camera, move it to (3, 4, 5) and look at the origin (0, 0, 0).
+                camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
+                camera.position.set(3, 4, 5);
+				camera.up = new THREE.Vector3(0, 1, 0);
+				centre = new THREE.Vector3();
+                camera.lookAt(centre);
+
+                // Draw a helper grid in the x-z plane (note: y is up).
+				gridHelper = new THREE.GridHelper(10, 20, 0xffffff)
+				scene.add(gridHelper);
+
+                // adds the cube and bunny to the scene.
+				createCube();
+				createBunny();
+
+				// Draws three lines across the axis. Red line for x axis, green line for y axis and blue line for z axis.
+                axes = new THREE.AxesHelper(10);
+                scene.add(axes);
+
+                // Removed the ambient lighting and added hemisphere lighting.
+				hemisphereLighting = new THREE.HemisphereLight(0x404040, 0xFFFFFF, 1.5);
+				scene.add(hemisphereLighting);
+
+                // Set up the Web GL renderer.
+                renderer = new THREE.WebGLRenderer({ antialias: true });
+				renderer.shadowMap.enabled = true;
+				renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+				renderer.setPixelRatio(window.devicePixelRatio); // HiDPI/retina rendering
+                renderer.setSize(window.innerWidth, window.innerHeight);
+                document.body.appendChild(renderer.domElement);
+
+                // Handle resizing of the browser window.
+				window.addEventListener('resize', handleResize, false);
+
+				var Controls = (function(Controls) {
+					"use strict";
+
+					Controls.addMouseHandler = function (domObject, drag) {
+						var positionX = null;
+						var positionY = null;
+
+						// function called for when the mouse button is pressed down.
+						function handleMouseDown(event) {
+							positionX = event.clientX;
+							positionY = event.clientY;
+						}
+
+						// function called for when the mouse is moved while the button is pressed down.
+						function handleMouseMovement(event) {
+							if (positionX === null || positionY === null)
+								return;
+							if (drag)
+								var deltaX = event.clientX - positionX;
+								var deltaY = event.clientY - positionY;
+								drag(deltaX, deltaY);
+
+							positionX = event.clientX;
+							positionY = event.clientY;
+						}
+
+						// function called for when the mouse button is let go of.
+						function handleMouseUp(event) {
+							handleMouseMovement.call(this, event);
+							positionX = null;
+							positionY = null;
+						}
+
+						// Listen for mouse events, to react to them.
+						domObject.addEventListener("mousedown", handleMouseDown);
+						domObject.addEventListener("mousemove", handleMouseMovement);
+						domObject.addEventListener("mouseup", handleMouseUp);
+					};
+					return Controls;
+				}(Controls || {}));
+
+				Controls.addMouseHandler(renderer.domElement, drag);
+			}
+
+			// Implements the dragging.
+			// converts to spherical coordinates, changes the longitude and latitude angles then converts back to cartesian.
+			function drag( deltaX, deltaY) {
+            	// convert to spherical coordinates
+				var deltaAzimuthal = (Math.PI / 360) * -deltaY;
+				var deltaPolar = (Math.PI / 360) * deltaX;
+				var cameraPosition = camera.position.sub(centre);
+				var radialDistance = cameraPosition.length();
+				var polarAngle = Math.acos(cameraPosition.z / radialDistance);
+				var azimuthalAngle = Math.atan2(cameraPosition.y, cameraPosition.x);
+
+				// Subtract polarAngle and azimuthalAngle.
+				polarAngle = Math.min(Math.max(polarAngle - deltaPolar, 0), Math.PI);
+				azimuthalAngle -= deltaAzimuthal;
+
+				// Turn back into Cartesian coordinates
+				cameraPosition.x = (radialDistance * Math.sin(polarAngle) * Math.cos(azimuthalAngle));
+				cameraPosition.y = (radialDistance * Math.sin(polarAngle) * Math.sin(azimuthalAngle));
+				cameraPosition.z = (radialDistance * Math.cos(polarAngle));
+
+				// changes camera position but keeps the lookAt position the same.
+				camera.position.add(centre);
+				camera.lookAt(centre);
+			}
+
+            // Handle resizing of the browser window.
+            function handleResize()
+            {
+				camera.aspect = window.innerWidth / window.innerHeight;
+				camera.updateProjectionMatrix();
+				renderer.setSize(window.innerWidth, window.innerHeight);
+			}
+
+            // Animation loop function. This function is called whenever an update is required.
+			function animate()
+            {
+
+            	//updateCamera();
+				requestAnimationFrame(animate);
+
+                // Render the current scene to the screen.
+				renderer.render(scene, camera);
+            }
+
+			// function to load the Stanford bunny from a local server using objLoader and change the material to show face render mode.
+			function createBunny() {
+				var objLoader = new THREE.OBJLoader();
+				objLoader.setPath(url);
+				var material = new THREE.MeshPhongMaterial({color: 0xa8a015});
+				// loads from resource URL
+				objLoader.load('bunny-5000.obj',
+						function (object) {
+					bunny = new THREE.Mesh(object.children[0].geometry, material);;
+					// scales and translates the bunny so it fits inside the cube.
+					bunny.scale.set( 0.3, 0.3 , 0.3);
+					bunny.translateX( -0.4 );
+					bunny.translateZ( -0.3 );
+					scene.add(bunny);
+				});
+			}
+
+			// function to load the Stanford bunny from a local server using objLoader and change the material to show edge render mode.
+			function createEdgeBunny() {
+				var objLoader = new THREE.OBJLoader();
+				objLoader.setPath(url);
+				var material = new THREE.MeshBasicMaterial({color: 0xa8a015, wireframe: true});
+				// loads from resource URL
+				objLoader.load('bunny-5000.obj',
+						function (object) {
+							bunny = new THREE.Mesh(object.children[0].geometry, material);
+							// scales and translates the bunny so it fits inside the cube.
+							bunny.scale.set( 0.3, 0.3 , 0.3);
+							bunny.translateX( -0.4 );
+							bunny.translateZ( -0.3 );
+							scene.add(bunny);
+						});
+			}
+
+			// function to load the Stanford bunny from a local server using objLoader and change the material to show vertex render mode.
+			function createVertexBunny() {
+				var objLoader = new THREE.OBJLoader();
+				objLoader.setPath(url);
+				// loads from resource URL
+				objLoader.load('bunny-5000.obj',
+						function (object) {
+							var material = new THREE.PointsMaterial({ color: 0xa8a015, size: 0.02 });
+							bunny = new THREE.Points(object.children[0].geometry, material);
+							// scales and translates the bunny so it fits inside the cube.
+							bunny.scale.set( 0.3, 0.3 , 0.3);
+							bunny.translateX( -0.4 );
+							bunny.translateZ( -0.3 );
+							scene.add(bunny);
+						});
+			}
+
+			// function to create a cube for face render mode with opposite corners of (1, 1, 1) and (-1, -1 , -1).
+			// The centre is (0, 0, 0).
+			function createCube() {
+				var geometry = new THREE.BoxGeometry(2, 2, 2);
+				var material = new THREE.MeshBasicMaterial({ color: 0xa8a015});
+				cube = new THREE.Mesh(geometry, material);
+				scene.add(cube);
+			}
+
+			// function to create a cube for edge render mode with opposite corners of (1, 1, 1) and (-1, -1 , -1).
+			// The centre is (0, 0, 0).
+			function createEdgeCube() {
+				var geometry = new THREE.BoxGeometry(2, 2, 2);
+				var material = new THREE.MeshBasicMaterial({ color: 0xa8a015, wireframe: true });
+				cube = new THREE.Mesh(geometry, material);
+				scene.add(cube);
+			}
+
+			// function to create a cube for vertex render mode with opposite corners of (1, 1, 1) and (-1, -1 , -1).
+			// The centre is (0, 0, 0).
+			function createVertexCube() {
+				var geometry = new THREE.BoxGeometry(2, 2, 2);
+				var material = new THREE.PointsMaterial({ color: 0xa8a015, size: 0.07 });
+				var points = new THREE.Points(geometry, material);
+				cube = points;
+				scene.add(cube);
+			}
+
+			// loads textures using TextureLoader.
+			// the textures are then applied to the cube.
+            function createTextureCube() {
+				const geometry = new THREE.BoxGeometry(2, 2, 2);
+
+				const loader = new THREE.TextureLoader();
+				// loads all 6 textures and adds them to this array.
+				const textures = [
+					new THREE.MeshBasicMaterial({map: loader.load('https://cdn.vox-cdn.com/thumbor/BEiflPTxRDX4TYYfN1fSV5OXms4=/1400x1400/filters:format(jpeg)/cdn.vox-cdn.com/uploads/chorus_asset/file/13094907/1033790052.jpg.jpg')}),
+					new THREE.MeshBasicMaterial({map: loader.load('https://cdn.vox-cdn.com/thumbor/q9y8P4Yfe_o9NqCc653OEntBYS0=/1400x1400/filters:format(jpeg)/cdn.vox-cdn.com/uploads/chorus_asset/file/20054881/1252475167.jpg.jpg')}),
+					new THREE.MeshBasicMaterial({map: loader.load('https://cdn.vox-cdn.com/thumbor/KQ77tMlXI1JWtNf-LH7iDq3El1o=/1400x1400/filters:format(jpeg)/cdn.vox-cdn.com/uploads/chorus_asset/file/19575223/1197656859.jpg.jpg')}),
+					new THREE.MeshBasicMaterial({map: loader.load('https://cdn.vox-cdn.com/thumbor/rnM79dGBWSJ9pF_LUwmTIb1ng14=/1400x1400/filters:format(jpeg)/cdn.vox-cdn.com/uploads/chorus_asset/file/22024540/1229462844.jpg')}),
+					new THREE.MeshBasicMaterial({map: loader.load('https://cdn.vox-cdn.com/thumbor/d6ANogRscHIvEFVRQg8Gzvudx5I=/1400x1400/filters:format(jpeg)/cdn.vox-cdn.com/uploads/chorus_asset/file/22013376/1282462475.jpg')}),
+					new THREE.MeshBasicMaterial({map: loader.load('https://cdn.vox-cdn.com/thumbor/2b-QTRTtsX0Vb14cYpHu7rfe5es=/1400x1400/filters:format(jpeg)/cdn.vox-cdn.com/uploads/chorus_asset/file/21991571/1282044534.jpg.jpg')}),
+				]
+				cube = new THREE.Mesh(geometry, textures);
+				scene.add(cube);
+			}
+
+			// resets the camera position back to (3, 4, 5) whilst still looking at the centre.
+			function resetCamera() {
+				camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
+				camera.position.set(3, 4, 5);
+				centre = new THREE.Vector3();
+				camera.lookAt(centre);
+			}
+
+			// tests the cube is correct by checking the vertices are in the right place.
+			function testReq1() {
+				var dotGeometry = new THREE.Geometry();
+				dotGeometry.vertices.push(new THREE.Vector3( 1, 1, 1));
+				dotGeometry.vertices.push(new THREE.Vector3( -1, -1, -1));
+				dotGeometry.vertices.push(new THREE.Vector3( -1, 1, 1));
+				dotGeometry.vertices.push(new THREE.Vector3( 1, -1, 1));
+				dotGeometry.vertices.push(new THREE.Vector3( 1, 1, -1));
+				dotGeometry.vertices.push(new THREE.Vector3( -1, -1, 1));
+				dotGeometry.vertices.push(new THREE.Vector3( 1, -1, -1));
+				dotGeometry.vertices.push(new THREE.Vector3( -1, 1, -1));
+				var dotMaterial = new THREE.PointsMaterial( { size: 0.07, color: 0x24cec4} );
+				var dots = new THREE.Points( dotGeometry, dotMaterial );
+				scene.add( dots );
+			}
+
+			// tests to see if the bunny fits perfectly inside the cube.
+			function testReq8() {
+				scene.remove(bunny);
+				scene.remove(cube);
+				createBunny();
+				var geometry = new THREE.BoxGeometry(2, 2, 2);
+				var material = new THREE.MeshBasicMaterial();
+				cube = new THREE.Mesh(geometry, material);
+				scene.add(cube);
+			}
+
+			// function to load and create football field using OBJLoader().
+			// model downloaded from https://www.cgtrader.com/items/2675737/download-page
+			function loadFootballField() {
+				var objLoader = new THREE.OBJLoader();
+				objLoader.setPath(url);
+				const loader = new THREE.TextureLoader();
+				loader.setPath(url);
+				// loads from resource URL
+				const texture = new THREE.MeshPhongMaterial({map: loader.load('FootballField/Textures/Saha.png')});
+
+				objLoader.load(
+						// loads from resource URL
+						'FootballField/Source/Saha.obj',
+						function (object) {
+							footballField = new THREE.Mesh(object.children[0].geometry, texture);
+							// scales and translates the field.
+							footballField.scale.set(5, 5, 5);
+							footballField.translateY( -2 );
+							scene.add(footballField);
+						},
+				);
+			}
+
+			// function to load and create the goalkeeper using OBJLoader() and MTLLoader().
+			// Model downloaded from https://clara.io/view/59a3fbf4-286a-492a-a341-ca6edccd0e7c
+			function loadKeeper() {
+				var loader = new MTLLoader();
+				loader.setPath(url);
+				var objLoader = new THREE.OBJLoader();
+				objLoader.setPath(url);
+
+				new Promise((resolve) => {
+					// loads from resource URL
+					loader.load('Keeper/football-player.mtl', (materials) => {
+						resolve(materials);
+					});
+				})
+						.then((materials) => {
+							materials.preload();
+							objLoader.setMaterials(materials);
+							// loads from resource URL
+							objLoader.load('Keeper/football-player.obj', (object) => {
+								keeper = object;
+								// scales, rotates and translates the keeper so it is in the correct position.
+								keeper.scale.set(0.2, 0.2, 0.2);
+								keeper.rotation.y -= 4.73;
+								keeper.translateZ(-4.1);
+								keeper.translateY(-0.15);
+								scene.add(keeper);
+							});
+						});
+			}
+
+			// function to load and create the footballer using OBJLoader()
+			// model downloaded from https://creazilla.com/nodes/3964-footballer-3d-model
+			function loadFootballer() {
+				var objLoader = new THREE.OBJLoader();
+				objLoader.setPath(url);
+				const loader = new THREE.TextureLoader();
+				loader.setPath(url);
+				// loads from resource URL
+				const texture = new THREE.MeshPhongMaterial({map: loader.load('Footballer/UVFootballer.png')});
+
+				objLoader.load(
+						// loads from resource URL
+						'Footballer/baller.obj',
+						function (object) {
+							footballer = new THREE.Mesh(object.children[0].geometry, texture);
+							// scales, rotates and translates the footballer so it is positioned correctly
+							footballer.scale.set(0.06, 0.06, 0.06);
+							footballer.rotation.y += 6;
+							footballer.translateZ(-0.8);
+							footballer.translateX(-2.7);
+							footballer.translateY( -0.15 );
+							scene.add(footballer);
+						},
+				);
+			}
+
+				// function to load and create the football using OBJLoader().
+				// football model downloaded from https://free3d.com/3d-model/soccer-ball-82644.html
+				function loadFootball() {
+					var objLoader = new THREE.OBJLoader();
+					objLoader.setPath(url);
+					const loader = new THREE.TextureLoader();
+					loader.setPath(url);
+					// loads from resource URL
+					const texture = new THREE.MeshBasicMaterial({map: loader.load('Football/PlatonicSurface_Color.jpg')});
+
+					objLoader.load(
+							// loads from resource URL
+							'Football/soccer%20ball.obj',
+							function ( object ) {
+								football = new THREE.Mesh(object.children[0].geometry, texture);
+								// scales, rotates and translates the football so it is positoned correctly.
+								football.scale.set(0.0005, 0.0005, 0.0005);
+								football.rotation.y += 4.73;
+								football.translateY(-0.1);
+								football.translateZ(2.5);
+								football.translateX(-1.3);
+								scene.add(football);
+							},
+					);
+			}
+
+			// function to load and create the trophy using OBJLoader()
+			// model downloaded from https://free3d.com/3d-model/champions-league-trophy-538443.html
+			function loadTrophy() {
+				var objLoader = new THREE.OBJLoader();
+				objLoader.setPath(url);
+				const loader = new THREE.TextureLoader();
+				loader.setPath(url);
+				// loads from resource URL
+				const texture = new THREE.MeshPhongMaterial({map: loader.load('Trophy/champions%20images.png')});
+
+				objLoader.load(
+						// loads from resource URL
+						'Trophy/champions.obj',
+						function ( object ) {
+							trophy = new THREE.Mesh(object.children[0].geometry, texture);
+							// scaled and translated so the trophy is correctly positioned.
+							trophy.scale.set(0.3, 0.3, 0.3);
+							trophy.translateZ( -3.4 );
+							trophy.translateY(0.35);
+							scene.add(trophy);
+						},
+				);
+			}
+
+			// created the trophy stand using a box geometry.
+			function loadTrophyStand() {
+				var geometry = new THREE.BoxGeometry(0.25, 0.5, 0.25);
+				var material = new THREE.MeshLambertMaterial({ color: 0x35343a});
+				trophyStand = new THREE.Mesh(geometry, material);
+				trophyStand.translateY(0.1);
+				trophyStand.translateZ(-3.4);
+				scene.add(trophyStand);
+			}
+
+			// function to load and create the goalposts using OBJLoader() and MTLLoader().
+			// model downloaded from https://free3d.com/3d-model/football-goal-473670.html
+			function loadHomeGoal() {
+				var loader = new MTLLoader();
+				loader.setPath(url);
+				var objLoader = new THREE.OBJLoader();
+				objLoader.setPath(url);
+
+				new Promise((resolve) => {
+					// loads from resource URL
+					loader.load('FootballGoal/football_goal.mtl', (materials) => {
+						resolve(materials);
+					});
+				})
+						.then((materials) => {
+							materials.preload();
+							objLoader.setMaterials(materials);
+							// loads from resource URL
+							objLoader.load('FootballGoal/football%20goal.obj', (object) => {
+								homeGoal = object;
+								// scales, rotates and translates the goal post so it is positioned correctly.
+								homeGoal.scale.set(0.002, 0.002, 0.002);
+								homeGoal.rotation.y += 4.73;
+								homeGoal.translateZ(4.38);
+								homeGoal.translateX(-0.6);
+								homeGoal.translateY(-0.15);
+								scene.add(homeGoal);
+							});
+
+						});
+			}
+
+			// function to load and create the goalposts using OBJLoader() and MTLLoader().
+			// model downloaded from https://free3d.com/3d-model/football-goal-473670.html
+			function loadAwayGoal() {
+				var loader = new MTLLoader();
+				loader.setPath(url);
+				var objLoader = new THREE.OBJLoader();
+				objLoader.setPath(url);
+
+				new Promise((resolve) => {
+					// loads from resource URL
+					loader.load('FootballGoal/football_goal.mtl', (materials) => {
+						resolve(materials);
+					});
+				})
+						.then((materials) => {
+							materials.preload();
+							objLoader.setMaterials(materials);
+							// loads from resource URL
+							objLoader.load('FootballGoal/football%20goal.obj ', (object) => {
+								awayGoal = object;
+								// scales, rotates and translates the goal post so it is positioned correctly.
+								awayGoal.scale.set(0.002, 0.002, 0.002);
+								awayGoal.rotation.y -= 4.72;
+								awayGoal.translateZ(4.33);
+								awayGoal.translateX(-0.39);
+								awayGoal.translateY(-0.15);
+								scene.add(awayGoal);
+							});
+
+						});
+			}
+
+            // Handle keyboard presses.
+            function handleKeyDown(event)
+            {
+            	// https://keycode.info
+				// This website was used to get the case number for each key input.
+                switch (event.keyCode)
+                {
+                    // f: shows cube in face render mode.
+                    case 70:
+						scene.remove(cube);
+						scene.remove(bunny);
+                        createCube();
+                        break;
+
+					// e: Shows cube in edge render mode.
+                    case 69:
+						scene.remove(cube);
+						scene.remove(bunny);
+                        createEdgeCube();
+                        break;
+
+					// v: Shows cube in vertex render mode.
+                    case 86: // v = vertex
+						scene.remove(cube);
+						scene.remove(bunny);
+                        createVertexCube();
+                        break;
+
+                    // t: Shows cube with textures applied.
+					case 84:
+						scene.remove(cube);
+						scene.remove(bunny);
+						createTextureCube();
+						break
+
+					// r: Rotate the bunny and cube by 0.1 units in every direction.
+                    case 82:
+                        cube.rotation.x += 0.1;
+                        cube.rotation.y += 0.1;
+                        cube.rotation.z += 0.1;
+						bunny.rotation.x += 0.1;
+						bunny.rotation.y += 0.1;
+						bunny.rotation.z += 0.1;
+                        break;
+
+					// x: Rotate the bunny and cube by 0.1 units in the X direction.
+                    case 88:
+                        cube.rotation.x += 0.1;
+						bunny.rotation.x += 0.1;
+                        break;
+
+					// y: Rotate the bunny and cube by 0.1 units in the Y direction.
+                    case 89:
+                        cube.rotation.y += 0.1;
+						bunny.rotation.y += 0.1;
+                        break;
+
+					// z: Rotate the bunny and cube by 0.1 units in the Z direction.
+                    case 90:
+                        cube.rotation.z += 0.1;
+                        bunny.rotation.z += 0.1;
+                        break;
+
+					// q: resets the rotations.
+                    case 81:
+                        cube.setRotationFromQuaternion(quaternion);
+						bunny.setRotationFromQuaternion(quaternion);
+                        break;
+
+                    // a: resets the camera position.
+                    case 65:
+                        resetCamera();
+                        break;
+
+					// right arrow: moves the camera position right.
+                    case 39:
+                        camera.position.x += 0.5;
+                        break;
+
+					// left arrow: moves the camera position left.
+                    case 37:
+                        camera.position.x += -0.5;
+                        break;
+
+                    // up arrow: moves the camera position up.
+                    case 38:
+                        camera.position.y += 0.5;
+                        break;
+
+                    // down arrow: moves the camera position down.
+                    case 40:
+                        camera.position.y += -0.5;
+                        break;
+
+					// w: moves the camera position forward.
+                    case 87:
+                        camera.position.z += -0.5;
+                        break;
+
+					// s: moves the camera position backward.
+                    case 83:
+                        camera.position.z += 0.5;
+                        break;
+
+					// spacebar: shows bunny in face render mode.
+					case 32:
+						scene.remove(cube);
+						scene.remove(bunny);
+						createBunny();
+						break;
+
+					// b: shows both the bunny and cube in edge render mode.
+					case 66:
+						scene.remove(cube);
+						scene.remove(bunny);
+						createEdgeBunny();
+						createEdgeCube();
+						break;
+
+					// n: shows bunny in vertex mode.
+					case 78:
+						scene.remove(cube);
+						scene.remove(bunny);
+						createVertexBunny();
+						break;
+
+					// m: shows the bunny in edge mode.
+					case 77:
+						scene.remove(cube);
+						scene.remove(bunny);
+						createEdgeBunny();
+						break;
+
+					// c: create football scene - requirement 10
+					case 67:
+						scene.remove(bunny);
+						scene.remove(cube);
+						scene.remove(gridHelper);
+						scene.remove(axes);
+						loadFootball();
+						loadTrophy();
+						loadFootballField();
+						loadTrophyStand();
+						loadFootballer();
+						loadHomeGoal();
+						loadAwayGoal();
+						loadKeeper();
+						break;
+
+					// l: adds point lighting.
+					case 76:
+						scene.remove(hemisphereLighting);
+						const pointLight = new THREE.PointLight( 0xffffff, 1.25);
+						pointLight.position.set( -2, 3, 0 );
+						scene.add(pointLight);
+						break;
+
+					// 1: test requirement 1 and requirement 4
+					case 49:
+						testReq1();
+						break;
+
+					// 8: test requirement 8
+					case 56:
+						testReq8();
+						break;
+                }
+            }
+		</script>
+	</body>
+</html>
